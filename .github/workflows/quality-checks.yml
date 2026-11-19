@@ -1,0 +1,106 @@
+
+name: Scheduled Project Quality Checks
+
+on:
+  schedule:
+    # Daily at 9:53 AM IST
+    - cron: "23 4 * * *"
+
+  push:
+    branches: [main]
+
+  pull_request:
+    branches: [main]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check Python syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import py_compile
+
+          excluded = {
+              ".git", ".venv", "venv",
+              "node_modules", "__pycache__",
+              "logs", "build", "dist"
+          }
+
+          files = [
+              p for p in Path(".").rglob("*.py")
+              if not any(part in excluded for part in p.parts)
+          ]
+
+          for file in files:
+              py_compile.compile(str(file), doraise=True)
+
+          print(f"Validated {len(files)} Python files.")
+          PY
+
+      - name: Run Python tests when available
+        shell: bash
+        run: |
+          if find . -type f \
+            \( -name "test_*.py" -o -name "*_test.py" \) \
+            -not -path "*/venv/*" \
+            -not -path "*/node_modules/*" \
+            | grep -q .; then
+
+            if [ -s requirements.txt ]; then
+              python -m pip install -r requirements.txt
+            fi
+
+            python -m pip install pytest
+            python -m pytest -q
+          else
+            echo "No Python test suite found. Skipping."
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build and lint Node projects
+        shell: bash
+        run: |
+          mapfile -t lockfiles < <(
+            find . -name package-lock.json \
+            -not -path "*/node_modules/*" \
+            -not -path "*/.git/*"
+          )
+
+          for lockfile in "${lockfiles[@]}"; do
+            directory=$(dirname "$lockfile")
+
+            if [ -f "$directory/package.json" ]; then
+              echo "Checking Node project: $directory"
+
+              (
+                cd "$directory"
+                npm ci
+                npm run lint --if-present
+                npm run build --if-present
+              )
+            fi
+          done
+
+      - name: Complete quality checks
+        run: echo "Scheduled quality checks completed."
