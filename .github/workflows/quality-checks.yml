@@ -1,4 +1,3 @@
-
 name: Scheduled Project Quality Checks
 
 on:
@@ -27,7 +26,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality-checks:
@@ -113,6 +112,16 @@ jobs:
               )
             fi
           done
+
+      - name: Record scheduled run
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "asmit2704"
+          git config user.email "asmit2704@users.noreply.github.com"
+          date -u +"Last check: %Y-%m-%d %H:%M:%S UTC" > .ci-heartbeat
+          git add .ci-heartbeat
+          git diff --cached --quiet || git commit -m "chore(ci): update scheduled quality check timestamp"
+          git push
 
       - name: Complete quality checks
         run: echo "Scheduled quality checks completed."
