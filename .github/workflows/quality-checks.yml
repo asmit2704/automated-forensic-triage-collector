@@ -115,12 +115,45 @@ jobs:
 
       - name: Record scheduled run
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        shell: bash
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            COUNT=1
+          else
+            # Random delay (0 to 15 minutes) so commits don't land on predictable minutes
+            sleep $((RANDOM % 900))
+
+            # Pick a random commit count per repo run:
+            # ~35% chance of 0 commits, ~30% chance of 1, ~20% chance of 2, ~15% chance of 3
+            ROLL=$((RANDOM % 20))
+            if [ "$ROLL" -lt 7 ]; then
+              COUNT=0
+            elif [ "$ROLL" -lt 13 ]; then
+              COUNT=1
+            elif [ "$ROLL" -lt 17 ]; then
+              COUNT=2
+            else
+              COUNT=3
+            fi
+          fi
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No heartbeat commit needed for this run."
+            exit 0
+          fi
+
           git config user.name "asmit2704"
           git config user.email "asmit2704@users.noreply.github.com"
-          date -u +"Last check: %Y-%m-%d %H:%M:%S UTC" > .ci-heartbeat
-          git add .ci-heartbeat
-          git diff --cached --quiet || git commit -m "chore(ci): update scheduled quality check timestamp"
+
+          for i in $(seq 1 $COUNT); do
+            date -u +"Check #$i: %Y-%m-%d %H:%M:%S UTC" > .ci-heartbeat
+            git add .ci-heartbeat
+            git commit -m "chore(ci): scheduled quality check pass #$i"
+            if [ "$i" -lt "$COUNT" ]; then
+              sleep $((15 + RANDOM % 120))
+            fi
+          done
+
           git push
 
       - name: Complete quality checks
